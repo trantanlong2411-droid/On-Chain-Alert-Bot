@@ -1,0 +1,20 @@
+{
+  "schema": "pharos-onchain-alert-production-public-check-v1",
+  "observedAtUtc": "2026-11-05T10:03:42.726Z",
+  "sourceRun": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42007487325",
+  "worker": "https://on-chain-alert-bot.trantanlong2411.workers.dev/",
+  "version": "pharos-onchain-alert-2026-11-05-v1",
+  "chainId": 688689,
+  "network": "eip155:688689",
+  "officialUsdcContract": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
+  "configuredThresholdUSDC": "0.01",
+  "durableObjectBound": true,
+  "publicDashboard": true,
+  "adminWritesWithoutAuthBlocked": true,
+  "telegramConfigured": false,
+  "adminKeyConfigured": false,
+  "confirmedTelegramAlertCount": 0,
+  "readOnlyChainVerification": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42007498141",
+  "productionTelegramDeliveryStatus": "NOT_YET_TESTED",
+  "nextStep": "Owner must configure Telegram and admin secrets, then demonstrate confirmed real Transfer notification and a duplicate suppression result. No secret values are required in GitHub or chat."
+}
