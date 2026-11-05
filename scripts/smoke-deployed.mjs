@@ -30,6 +30,14 @@ assert.equal(st.data.ok,true);
 assert.equal(st.data.asset.toLowerCase(),USDC_DEFAULT.toLowerCase());
 assert.ok(/^\d+(\.\d+)?$/.test(st.data.thresholdUSDC));
 assert.ok(Array.isArray(st.data.recent));
+console.log('ALERT_DELIVERY_STATE',JSON.stringify({
+ telegramConfigured:st.data.telegramConfigured,
+ lastError:st.data.lastError||null,
+ events:st.data.recent.slice(0,5).map(e=>({
+  status:e.delivery,amountUSDC:e.amountUSDC,
+  source:e.source,hash:e.hash,deliveryError:e.error||null
+ }))
+}));
 assert.equal(typeof st.data.telegramConfigured,'boolean');
 assert.equal(typeof st.data.adminConfigured,'boolean');
 const rejected=await fetch(base+'/api/admin/threshold',{method:'POST',headers:{'content-type':'application/json'},
