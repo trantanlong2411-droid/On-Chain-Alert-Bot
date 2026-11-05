@@ -35,6 +35,19 @@ assert.equal(typeof st.data.adminConfigured,'boolean');
 const rejected=await fetch(base+'/api/admin/threshold',{method:'POST',headers:{'content-type':'application/json'},
  body:JSON.stringify({thresholdUSDC:'0.001'}),signal:AbortSignal.timeout(15000)});
 assert.ok([401,503].includes(rejected.status),'Public callers must not write admin threshold');
+const rejectedBody=await rejected.json().catch(()=>({}));
+const expectedAdminStatus=h.data.adminConfigured?401:503;
+console.log('ADMIN_CONFIG_DIAGNOSTIC',JSON.stringify({
+ healthAdminConfigured:h.data.adminConfigured,statusAdminConfigured:st.data.adminConfigured,
+ unauthenticatedPostStatus:rejected.status,
+ expectedUnauthenticatedPostStatus:expectedAdminStatus,
+ error:rejectedBody.error||null
+}));
+assert.equal(st.data.adminConfigured,h.data.adminConfigured,
+ 'Health and durable status disagree on admin configuration');
+assert.equal(rejected.status,expectedAdminStatus,
+ 'Production HTTP POST admin guard disagrees with GET health: mixed deployments or lost secret');
+
 const page=await fetch(base,{signal:AbortSignal.timeout(15000)}).then(r=>r.text());
 assert.ok(page.includes('ON-CHAIN')&&page.includes('Telegram'));
 const result={
