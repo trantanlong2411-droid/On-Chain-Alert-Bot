@@ -31,6 +31,16 @@ Public default settings: `ATLANTIC_RPC_URL=https://atlantic.dplabs-internal.com`
 
 **No wallet keys, test USDC, wallet connect, gas funding, or smart-contract deployment is required.** Monitoring is read-only.
 
+## Password-free public reviewer access (no ADMIN_API_KEY required)
+
+The website, `GET /api/health`, and `GET /api/status` are already public. Reviewers can inspect the live network, current configured threshold, alert history, Telegram delivery statuses, explorer links, and the complete GitHub source without logging in. The page now labels its private controls clearly as optional **owner-only** operations.
+
+`ADMIN_API_KEY` is **not required** for this public reviewer experience. However, the private admin actions that change the threshold, manually scan, or send a Telegram message remain protected. Removing authentication from those endpoints would let strangers send messages to the project's Telegram chat and change its monitoring policy.
+
+**To prove a real alert without setting up an admin key:** keep the Cloudflare Cron active, verify that `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are correct, and make a genuine Circle USDC transfer on Pharos Atlantic that meets the public dashboard threshold. The current production threshold is **0.01 USDC**, so a new transfer of at least 0.01 test USDC qualifies. Cron should detect it after block confirmation and log `SENT` if Telegram accepts the message. Reviewers can then see the event and explorer link publicly. For deduplication proof, the unique SQL key and tests demonstrate that the same event cannot be sent again; private manual re-inspection remains owner-only.
+
+**Important:** A chat ID is not necessarily the number preceding the colon in a Telegram bot token (that number identifies the bot). Use `message.chat.id` from Telegram `getUpdates` for the destination chat, after sending `/start` to the bot. A configured-secret flag does not prove messages can reach that chat. Revoke and replace any bot token previously visible in a screenshot or URL shared publicly.
+
 ## Reviewer demonstration: a real Telegram alert + no repeats
 
 1. Open https://on-chain-alert-bot.trantanlong2411.workers.dev/ and confirm public `/api/health` and `/api/status` are working.
