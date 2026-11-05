@@ -1,0 +1,32 @@
+name: On-Chain Alert Bot — unit tests, Cloudflare bundle and real Atlantic event
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verified-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test token thresholds, USDC log decoding, Telegram message and duplicate protection policy
+        run: npm test
+      - name: Compile Cloudflare Worker, Durable Object and cron
+        run: npm run build
+      - name: Verify USDC transfer from an actual confirmed Atlantic transaction
+        run: node scripts/verify-atlantic.mjs
+      - name: Archive real testnet receipt evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onchain-alert-real-atlantic-evidence
+          path: proof/atlantic-readonly-evidence.json
+          retention-days: 30
+          if-no-files-found: error
