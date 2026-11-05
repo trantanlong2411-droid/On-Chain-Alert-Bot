@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "on-chain-alert-bot",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WATCH_STATE",
+        "class_name": "WatchState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "WatchState"
+      ]
+    }
+  ],
+  "vars": {
+    "ATLANTIC_RPC_URL": "https://atlantic.dplabs-internal.com",
+    "USDC_CONTRACT": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
+    "ALERT_MIN_USDC": "0.01",
+    "FINALITY_BLOCKS": "3"
+  }
+}
