@@ -33,5 +33,6 @@
     "USDC_CONTRACT": "0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B",
     "ALERT_MIN_USDC": "0.01",
     "FINALITY_BLOCKS": "3"
-  }
+  },
+  "keep_vars": true
 }
