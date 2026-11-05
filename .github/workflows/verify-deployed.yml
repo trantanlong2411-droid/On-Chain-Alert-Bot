@@ -1,0 +1,31 @@
+name: On-Chain Alert Bot — deployed Worker readiness
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-deployed.yml'
+      - 'scripts/smoke-deployed.mjs'
+      - 'src/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-worker-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Verify deployed Worker version, durable SQL state, public dashboard and protected admin writes
+        run: node scripts/smoke-deployed.mjs
+      - name: Archive real production readiness
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onchain-alert-deployed-readiness
+          path: proof/deployed-readiness.json
+          retention-days: 30
+          if-no-files-found: error
