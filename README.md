@@ -12,7 +12,7 @@
 | Task requirement | Code and proof |
 | --- | --- |
 | At least one configurable condition | Each private channel can set its own minimum confirmed Circle USDC transfer amount, validated to 6 decimals. The existing Telegram owner mode also supports a separate protected threshold. |
-| Deliver to a real channel | The Cloudflare Worker POSTs a verified event to a unique, randomly generated ntfy topic. Reviewer opens the ntfy topic and subscribes via web/mobile. ntfy response includes a message ID; a separate production test polls ntfy's cached message history to verify it was actually accepted and stored. |
+| Deliver to a real channel | The Cloudflare Worker POSTs a verified event to a unique, randomly generated ntfy topic. Reviewer opens the ntfy topic and subscribes via web/mobile. ntfy response includes a message ID; a separate production test checks the provider acknowledgement and tries reading the message back from its cache when supported. |
 | Every alert includes event, amount, TX link | Alert includes exact USDC amount, sender, destination, block and real Atlantic Pharos explorer transaction link, sourced from a successful confirmed ERC-20 Transfer receipt or live indexed logs. |
 | No repeat spam for one event | The SQLite-backed Durable Object writes a unique `txHash:logIndex` event ID **before** publishing. A second request returns `DUPLICATE` without re-sending. Timeout / uncertain results remain marked uncertain and aren't blindly retried. |
 
@@ -79,3 +79,5 @@ No video has been recorded. Actual score is determined by the external reviewer.
 ### Provider availability
 
 The free official ntfy.sh service may return HTTP 429 when Cloudflare shares an outgoing IP with other publishers. New channels now send a real **welcome/test message at creation** and bind the topic to the first accepting host among the community-listed [ntfy.jae.fi](https://ntfy.jae.fi/), [ntfy.adminforge.de](https://ntfy.adminforge.de/) and [ntfy.sh](https://ntfy.sh/). The subscribe URL always points to the exact host selected during creation; events are never rerouted silently to a host the user did not subscribe to. These community instances are independent operators and may be unavailable or have their own policies, so they must not be used for confidential alerts. If all hosts reject publication, creation fails honestly.
+
+**Evidence distinction:** The ntfy publish API confirming HTTP success and a message ID establishes service acceptance. Community hosts can disable or restrict cached replay, so the CI proof stores `ntfyCachedMessageVerified` independently. A personal device receives a push only after it subscribes and the provider/mobile platform delivers it. Do not interpret the `SENT` state as confirmed reception by an end user.
