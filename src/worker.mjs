@@ -255,7 +255,7 @@ export default {
   if(!c.hasStorage)return reply({ok:false,error:'Missing WATCH_STATE Durable Object binding'},503);
   if(request.method==='GET'&&path==='/api/status')
    return doRequest(env,'/status');
-  const personalPath=path.match(new RegExp('^/api/ntfy/([0-9a-f]{32})(?:/(threshold|inspect|test|scan))?
+  const personalPath=path.match(new RegExp('^/api/ntfy/([0-9a-f]{32})(?:/(threshold|inspect|test|scan))?$'));
   if(request.method==='POST'&&path==='/api/ntfy/create'){
    if(!allowCreate(request))return reply({ok:false,error:'Create limit: 3 channels per 10 minutes. Retry later.'},429);
    try{
