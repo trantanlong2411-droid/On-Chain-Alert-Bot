@@ -149,7 +149,7 @@ export class WatchState extends DurableObject{
   }catch(ex){return reply({ok:false,error:err(ex)},400);}
  }
  async ownerOK(request){
-  const token=(request.headers.get('authorization')||'').replace(/^Bearer\\s+/i,'').trim();
+  const token=(request.headers.get('authorization')||'').replace(/^Bearer[ ]+/i,'').trim();
   if(!token)return false;
   try{
    const hash=await hashAccess(token);
