@@ -1,0 +1,29 @@
+name: On-Chain Alert Bot — real ntfy notification and dedup proof
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  real-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Publish a real historic verified USDC alert to an isolated ntfy channel, verify cached push and assert no duplicate
+        run: node scripts/verify-ntfy-deployed.mjs
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: pharos-ntfy-real-push-dedup-proof
+          path: proof/ntfy-production-proof.json
+          retention-days: 30
+          if-no-files-found: error

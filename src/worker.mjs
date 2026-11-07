@@ -2,6 +2,7 @@ import {DurableObject} from 'cloudflare:workers';
 import {setup,publicSetup,threshold,NETWORK,TRANSFER_TOPIC} from './config.mjs';
 import {rpc,blockStatus,qualifying,scanWindow,sendTelegram,smallJson} from './monitor.mjs';
 import {PAGE} from './page.mjs';
+import {publishNtfy,channelName,hashAccess} from './ntfy.mjs';
 const iso=()=>new Date().toISOString();
 const err=x=>String(x?.message||x||'Unknown error').slice(0,190);
 const reply=smallJson;
@@ -30,22 +31,38 @@ export class WatchState extends DurableObject{
     from:x.from_address,to:x.to_address,amountUSDC:x.amount_usdc,
     explorer:x.explorer,source:x.source,observedAt:x.first_seen,
     delivery:x.delivery,deliveredAt:x.delivered_at,
-    telegramMessageId:x.telegram_message_id,error:x.error}));
+    telegramMessageId:this.get('personal')==='true'?null:x.telegram_message_id,
+    ntfyNotificationId:this.get('personal')==='true'?x.telegram_message_id:null,error:x.error}));
   return {ok:true,network:NETWORK,thresholdUSDC:c.min.display,asset:c.asset,
    alertsTotal:count,deliveredTotal:delivered,cursor:this.get('cursor'),
+   deliveryChannel:this.get('personal')==='true'?'ntfy':'telegram',
+   ntfyTopic:this.get('personal')==='true'?this.get('topic'):null,
+   ntfySubscriptionUrl:this.get('personal')==='true'?'https://ntfy.sh/'+this.get('topic'):null,
+   storedMode:this.get('personal')==='true'?'private-personal-alert':'legacy-telegram',
+   noRepeatPolicy:'Each event keyed by transaction hash and log index and reserved before publish',
    lastScan:this.get('lastScan'),lastError:this.get('lastError'),
-   telegramConfigured:c.hasTelegram,adminConfigured:c.hasAdmin,recent};
+   telegramConfigured:c.hasTelegram,adminConfigured:c.hasAdmin,
+   notificationsViaNtfy:this.get('personal')==='true',recent};
  }
  async notifyOnce(e,source='cron'){
   const found=this.sql.exec('SELECT id,delivery FROM alerts WHERE id=?',e.id).toArray()[0];
+  if(this.get('personal')==='true'){
+   const sentToday=this.sql.exec("SELECT COUNT(*) as c FROM alerts WHERE first_seen >= ?",
+    new Date(Date.now()-24*3600000).toISOString()).toArray()[0]?.c??0;
+   if(sentToday>=35)return {status:'DAILY_LIMIT',id:e.id,error:'Personal channel safety cap: 35 unique alerts per 24h'};
+  }
   if(found)return {status:'DUPLICATE',id:e.id,delivered:found.delivery};
   const at=iso();
   // Reserve in SQLite before network delivery. Unknown Telegram outcomes are not retried.
   this.sql.exec('INSERT OR IGNORE INTO alerts (id,tx_hash,log_index,block_number,from_address,to_address,amount_atomic,amount_usdc,explorer,source,first_seen,delivery) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',e.id,e.hash,e.index,e.block,e.from,e.to,e.amountAtomic,e.amountUSDC,e.explorer,source,at,'SENDING');
   try{
-   const delivered=await sendTelegram(e,this.env);
+   const personal=this.get('personal')==='true';
+   const delivered=personal?await publishNtfy({topic:this.get('topic'),event:e}):
+     await sendTelegram(e,this.env);
    this.sql.exec("UPDATE alerts SET delivery='SENT',delivered_at=?,telegram_message_id=?,error=NULL WHERE id=?",iso(),delivered.messageId,e.id);
-   return {status:'SENT',id:e.id,hash:e.hash,amountUSDC:e.amountUSDC,explorer:e.explorer,telegramMessageId:delivered.messageId};
+   return {status:'SENT',id:e.id,hash:e.hash,amountUSDC:e.amountUSDC,explorer:e.explorer,
+    channel:personal?'ntfy':'telegram',notificationId:delivered.messageId,
+    warning:personal?'Accepted by ntfy; subscriber device delivery is not proven':null};
   }catch(ex){
    const reason=err(ex);
    this.sql.exec("UPDATE alerts SET delivery='DELIVERY_UNCERTAIN',error=? WHERE id=?",reason,e.id);
@@ -54,7 +71,8 @@ export class WatchState extends DurableObject{
  }
  async scan(){
   const c=this.opts();
-  if(!c.hasTelegram)return {ok:false,reason:'TELEGRAM_NOT_CONFIGURED',note:'Cron will not consume events until Telegram is configured'};
+  if(!c.hasTelegram&&this.get('personal')!=='true')
+   return {ok:false,reason:'TELEGRAM_NOT_CONFIGURED',note:'Legacy Telegram watcher is inactive; create an ntfy personal channel on the website to monitor without secrets.'};
   try{
    const {latest,safe}=await blockStatus(c);
    const cursorText=this.get('cursor');
@@ -85,7 +103,8 @@ export class WatchState extends DurableObject{
  }
  async inspect(hash){
   const c=this.opts();
-  if(!c.hasTelegram)return reply({ok:false,error:'Configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID first'},503);
+  if(!c.hasTelegram&&this.get('personal')!=='true')
+   return reply({ok:false,error:'Configure Telegram secrets, or create a personal ntfy channel for key-free alerts'},503);
   if(!/^0x[0-9a-f]{64}$/i.test(hash||''))return reply({ok:false,error:'Valid on-chain transaction hash required'},400);
   try{
    const {safe}=await blockStatus(c);
@@ -114,15 +133,77 @@ export class WatchState extends DurableObject{
    return reply({ok:true,telegramDelivered:true,messageId:data.result?.message_id,note:'Test notification only, not a transaction alert'});
   }catch(ex){return reply({ok:false,error:'Telegram test failed: '+err(ex)},503)}
  }
+ async initPersonal(data){
+  if(this.get('personal')==='true'||this.get('topic'))return reply({ok:false,error:'This private channel is already initialized'},409);
+  try{
+   const value=threshold(data.thresholdUSDC||'0.001');
+   const tokenHash=await hashAccess(data.token);
+   const topic=channelName();
+   this.put('threshold',value.display);
+   this.put('tokenHash',tokenHash);
+   this.put('personal','true');
+   this.put('topic',topic);
+   this.put('createdAt',iso());
+   await this.ctx.storage.setAlarm(Date.now()+3000);
+   return reply({ok:true,channel:'ntfy',thresholdUSDC:value.display,topic,subscribeUrl:'https://ntfy.sh/'+topic});
+  }catch(ex){return reply({ok:false,error:err(ex)},400);}
+ }
+ async ownerOK(request){
+  const token=(request.headers.get('authorization')||'').replace(/^Bearer\\s+/i,'').trim();
+  if(!token)return false;
+  try{
+   const hash=await hashAccess(token);
+   return !!this.get('tokenHash')&&hash===this.get('tokenHash');
+  }catch{return false;}
+ }
+ async testNtfy(){
+  if(this.get('personal')!=='true')return reply({ok:false,error:'Not an ntfy channel'},400);
+  const last=Date.parse(this.get('lastNtfyTest')||'');
+  if(Number.isFinite(last)&&Date.now()-last<300000)
+   return reply({ok:false,error:'Connection test allowed once every five minutes to prevent message spam'},429);
+  try{
+   const result=await publishNtfy({topic:this.get('topic'),
+    title:'Pharos Alert Bot · Channel connection test',
+    message:'Connection test sent at '+iso()+' UTC. This is NOT a real blockchain transaction alert.'});
+   this.put('lastNtfyTest',iso());
+   this.put('lastNtfyMessageId',result.messageId);
+   return reply({ok:true,...result});
+  }catch(ex){return reply({ok:false,error:err(ex)},502);}
+ }
+ async alarm(){
+  try{
+   if(this.get('personal')==='true')await this.scan();
+  }catch(ex){
+   this.put('lastError','Alarm: '+err(ex));
+  }finally{
+   if(this.get('personal')==='true')
+    await this.ctx.storage.setAlarm(Date.now()+120000);
+  }
+ }
  async fetch(request){
   if(request.method!=='POST')return reply({error:'POST required'},405);
   const path=new URL(request.url).pathname;
   if(path==='/status')return reply(this.status());
-  if(path==='/scan')return reply(await this.scan());
+  if(path==='/scan'){
+   if(this.get('personal')==='true'&&!await this.ownerOK(request))return reply({ok:false,error:'Invalid channel edit token'},403);
+   return reply(await this.scan());
+  }
   let data;
   try{const raw=await request.text();if(raw.length>2500)throw Error('Too large');
    data=raw?JSON.parse(raw):{};}catch{return reply({ok:false,error:'Invalid JSON'},400)}
-  if(path==='/config'){
+  if(path==='/init-ntfy')return this.initPersonal(data);
+  if(path==='/ntfy-test'){
+   if(!await this.ownerOK(request))return reply({ok:false,error:'Not authorized'},403);
+   return this.testNtfy();
+  }
+  if(path==='/personal-inspect'){
+   if(!await this.ownerOK(request))return reply({ok:false,error:'Not authorized'},403);
+   if(this.get('personal')!=='true')return reply({ok:false,error:'Not a personal ntfy channel'},400);
+   return this.inspect(data.hash);
+  }
+  if(path==='/personal-config'&&!await this.ownerOK(request))
+   return reply({ok:false,error:'Not authorized'},403);
+  if(path==='/config'||path==='/personal-config'){
    try{
     const val=threshold(data.thresholdUSDC);
     this.put('threshold',val.display);
@@ -134,12 +215,22 @@ export class WatchState extends DurableObject{
   return reply({ok:false,error:'Not found'},404);
  }
 }
-const doRequest=(env,path,data={})=>{
- const id=env.WATCH_STATE.idFromName('pharos-atlantic-usdc-watcher');
+const doRequest=(env,path,data={},scope='pharos-atlantic-usdc-watcher',authorization='')=>{
+ const id=env.WATCH_STATE.idFromName(scope);
+ const headers={'content-type':'application/json'};
+ if(authorization)headers.authorization=authorization;
  return env.WATCH_STATE.get(id).fetch(new Request('https://alert-state.internal'+path,{
-  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)
+  method:'POST',headers,body:JSON.stringify(data)
  }));
 };
+const personalID=id=>'pharos-ntfy-'+id;
+const createdByIp=new Map();
+function allowCreate(request){
+ const ip=(request.headers.get('cf-connecting-ip')||'anonymous').slice(0,90);
+ const now=Date.now(),old=createdByIp.get(ip);
+ if(!old||now-old.start>600000){createdByIp.set(ip,{start:now,count:1});return true;}
+ old.count++;return old.count<=3;
+}
 function adminAuthorized(request,env){
  const secret=String(env.ADMIN_API_KEY||'');
  return secret.length>=16&&request.headers.get('authorization')==='Bearer '+secret;
@@ -157,10 +248,41 @@ export default {
    return reply({ok:true,...publicSetup(c),
     polling:'Cloudflare Cron Trigger every minute',
     event:'USDC Transfer above configured threshold',
-    noDuplicatePolicy:'Reserve each event before delivery and never retry on uncertain results'});
+    noDuplicatePolicy:'Reserve each event before delivery and never retry on uncertain results',
+    ntfyEnabled:true,personalChannelsWithoutAdminKey:true,
+    personalPoll:'Durable Object alarm every 2 minutes (best effort)',
+    notificationChannel:'ntfy (free per-user topic) or existing optional Telegram'});
   if(!c.hasStorage)return reply({ok:false,error:'Missing WATCH_STATE Durable Object binding'},503);
   if(request.method==='GET'&&path==='/api/status')
    return doRequest(env,'/status');
+  const personalPath=path.match(/^\\/api\\/ntfy\\/([0-9a-f]{32})(?:\\/(threshold|inspect|test|scan))?$/);
+  if(request.method==='POST'&&path==='/api/ntfy/create'){
+   if(!allowCreate(request))return reply({ok:false,error:'Create limit: 3 channels per 10 minutes. Retry later.'},429);
+   try{
+    const raw=await request.text();if(raw.length>300)throw Error('Creation request too long');
+    const cfg=raw?JSON.parse(raw):{},value=threshold(cfg.thresholdUSDC||'0.001');
+    const id=crypto.randomUUID().replace(/-/g,'');
+    const token=crypto.randomUUID().replace(/-/g,'')+'.'+crypto.randomUUID().replace(/-/g,'');
+    const initialized=await doRequest(env,'/init-ntfy',{token,thresholdUSDC:value.display},personalID(id));
+    const result=await initialized.json();
+    if(!initialized.ok||!result.ok)return reply(result,initialized.status);
+    return reply({ok:true,id,editToken:token,thresholdUSDC:value.display,
+     publicDashboard:url.origin+'/?channel='+id,subscribeUrl:result.subscribeUrl,
+     channel:'ntfy',notice:'Save your edit token privately. Topic URLs are public to anyone who knows them; do not send sensitive data.'},201);
+   }catch(ex){return reply({ok:false,error:err(ex)},400);}
+  }
+  if(personalPath){
+   const id=personalPath[1],action=personalPath[2];
+   if(request.method==='GET'&&!action)return doRequest(env,'/status',{},personalID(id));
+   if(request.method==='POST'&&['threshold','inspect','test','scan'].includes(action)){
+    try{
+     const raw=await request.text();if(raw.length>500)throw Error('Request too long');
+     const data=raw?JSON.parse(raw):{};
+     const name={threshold:'/personal-config',inspect:'/personal-inspect',test:'/ntfy-test',scan:'/scan'}[action];
+     return doRequest(env,name,data,personalID(id),request.headers.get('authorization')||'');
+    }catch(ex){return reply({ok:false,error:err(ex)},400);}
+   }
+  }
   const endpoints={
    '/api/admin/threshold':'/config',
    '/api/admin/inspect-tx':'/inspect',

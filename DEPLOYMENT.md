@@ -1,23 +1,32 @@
-# Configure Telegram and complete Pharos On-Chain Alert Bot
+# On-Chain Alert Bot: optional Telegram + no-secret ntfy deployment
 
-The GitHub repository is already linked to the Cloudflare Worker named `on-chain-alert-bot`. Confirm builds deploy branch `main` with `npx wrangler deploy`. The code is deployed and [production readiness has passed](https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42007487325).
+This repo is linked to the Cloudflare Worker `on-chain-alert-bot`. With the v2 update, reviewers do **not** need Telegram or an admin key: the public website supports a dedicated **ntfy** channel, adjustable USDC threshold and actual confirmed transfer alerts with duplicate prevention.
 
-## Remaining one-time owner setup (do not share any secrets)
+## Configure Cloudflare deployment
 
-1. Create a dedicated bot in Telegram via [@BotFather](https://t.me/BotFather) with `/newbot`. Save the bot token privately.
-2. Open your new bot conversation and send `/start`. To obtain your private chat ID, call Telegram [getUpdates](https://core.telegram.org/bots/api#getupdates) using your bot token **only in your own local environment**. The reply's `result[].message.chat.id` is the target chat ID. **Never post the URL containing the token**, share a bot token with ChatGPT, or commit it to GitHub.
-3. In Cloudflare → Workers & Pages → `on-chain-alert-bot` → Settings → Variables and Secrets, add:
-   - `TELEGRAM_BOT_TOKEN` as an **encrypted Secret**.
-   - `TELEGRAM_CHAT_ID` as a secret or non-secret variable containing the chat ID.
-   - `ADMIN_API_KEY` as a **different encrypted Secret**, randomly generated with at least 16 characters. Do not use the Telegram bot token as this password.
-4. Save/deploy variable changes. Open [live dashboard](https://on-chain-alert-bot.trantanlong2411.workers.dev/) and refresh; both Telegram and Admin flags should show CONFIGURED.
-5. Enter ADMIN_API_KEY into the dashboard password field (never into GitHub or chat), set threshold to `0.001` USDC and click **Save threshold**.
-6. Click **Send Telegram connection test**. Confirm a test notification arrives in your Telegram chat. This is not the actual task alert.
-7. In the historical real transaction box, use `0x4a603ea2d43512a76cc21f2d64b09e1ec4e07c34adc929526b514289ccfa61e1`; click **Inspect real TX & send alert**. Verify a real **0.003 USDC** Transfer alert appears in Telegram with its actual explorer link and UTC observation time. The website's recent event row should show **SENT**.
-8. Click **Inspect real TX & send alert** again with the same hash. The second response must say **DUPLICATE** and no new Telegram alert should appear.
-9. Check **Scan latest blocks**. Cron automatically invokes the same scanning logic every minute, with persistent cursor and event deduplication. Cloudflare's dashboard shows **Triggers → Cron Triggers**.
-10. Capture proof screenshots of the Telegram alert and website results (hide ADMIN_API_KEY and Telegram bot token). After completing both tests, use the **website itself as Pharos Proof Link** and GitHub as Repo Link.
+Cloudflare → Workers & Pages → `on-chain-alert-bot` → Builds: GitHub `trantanlong2411-droid/On-Chain-Alert-Bot`, branch `main`, project root `/`, deploy command `npx wrangler deploy`.
 
-For a public demo, the dashboard is read-only for viewers and does not expose Telegram or admin credentials. Its actions for threshold changes, manual scans and Telegram sends require ADMIN_API_KEY.
+The `wrangler.jsonc` file configures the original Cron Trigger and a SQLite Durable Object class `WatchState`. Personal ntfy channels use the existing DO binding, each with a unique ID and Alarm. No additional API key is required for the ntfy features.
 
-No crypto wallet or private signing keys are used. Do not claim Telegram delivery complete based solely on CI or a test message. A real alert and subsequent DUPLICATE result provide the strongest evidence for all four task requirements.
+After deployment, `GET /api/health` should report `pharos-onchain-alert-2026-11-07-v2` and `ntfyEnabled:true`.
+
+## Public proof (no secrets)
+
+1. Open https://on-chain-alert-bot.trantanlong2411.workers.dev/.
+2. In **Create your own live push-alert channel**, enter `0.001` USDC and create.
+3. Open the generated `https://ntfy.sh/pharos-alert-...` URL and subscribe.
+4. Click **Verify real TX & send alert** on the prefilled transaction hash. It is confirmed Circle USDC **0.003** on Pharos Atlantic and must include an explorer link.
+5. Click again; verify `DUPLICATE` and no second ntfy message.
+6. Change minimum USDC, click **Save alert threshold**, then run **Scan recent confirmed blocks** or allow the Alarm to scan.
+7. Capture the on-screen receipt and actual ntfy notification. Never show the private edit token.
+
+## Optional Telegram original integration
+
+If you still want the Telegram mode in addition to ntfy, privately configure three Cloudflare Settings → Variables and Secrets:
+- `TELEGRAM_BOT_TOKEN` encrypted secret, obtained from [@BotFather](https://t.me/BotFather);
+- `TELEGRAM_CHAT_ID` recipient chat ID (send /start to the bot and fetch message.chat.id from Telegram getUpdates *locally*);
+- `ADMIN_API_KEY` a distinct encrypted secret of at least 16 characters; never use Telegram token as the admin secret.
+
+The original admin controls allow a Telegram connection test, threshold change and confirmed historical transaction inspection. Public ntfy users never need these secrets.
+
+Safety: ntfy topics are public and anyone with the topic URL can publish messages to it; avoid secrets and high-stakes alerts. The notification service can be unavailable or rate-limited; Cloudflare alarms can run late. A provider-acknowledged notification does not guarantee a mobile device displayed it. Scheduled polling and event history are bounded to prevent spam.

@@ -1,5 +1,5 @@
 import {getAddress,parseUnits,formatUnits} from 'ethers';
-export const VERSION='pharos-onchain-alert-2026-11-05-v1';
+export const VERSION='pharos-onchain-alert-2026-11-07-v2';
 export const CHAIN_ID=688689;
 export const NETWORK='eip155:688689';
 export const RPC_DEFAULT='https://atlantic.dplabs-internal.com';

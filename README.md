@@ -1,76 +1,76 @@
 # On-Chain Alert Bot — Pharos Agent Arena
 
-**Easy / Trading & Monitoring · 50 points (+50 optional video)**
+**Easy / Trading & Monitoring · 50 points (+50 for an optional real video)**
 
-- **Demo / intended Proof Link:** https://on-chain-alert-bot.trantanlong2411.workers.dev/
-- **Repo:** https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot
-- **Network:** Pharos Atlantic Testnet, eip155:688689 (no wallet, gas, or private signing keys needed)
+- **Public Worker / required Proof Link:** https://on-chain-alert-bot.trantanlong2411.workers.dev/
+- **GitHub repository:** https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot
+- **Network:** Pharos Atlantic Testnet (chain ID 688689)
+- **Notification channel:** real [ntfy push notifications](https://ntfy.sh/) with no Telegram/admin secrets, plus optional legacy Telegram
 
-## Challenge coverage
+## All four scoring requirements
 
-| Requirement | Implementation |
-|---|---|
-| Configurable alert rule | Watch Circle USDC Transfer events on Atlantic, trigger for amount at least `ALERT_MIN_USDC` (default 0.01 USDC), changeable via authenticated web dashboard |
-| Real alert channel | Telegram Bot API `sendMessage` with encrypted Worker secret `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` |
-| What, value, and TX explorer link | Message contains actual USDC amount, from/to wallets, block, observed UTC time, and direct Atlantic Explorer transaction URL |
-| No repeat spam | SQLite Durable Object table keyed by unique `txHash:logIndex`, reserved before Telegram delivery; duplicates suppressed, ambiguous deliveries never automatically retried |
+| Task requirement | Code and proof |
+| --- | --- |
+| At least one configurable condition | Each private channel can set its own minimum confirmed Circle USDC transfer amount, validated to 6 decimals. The existing Telegram owner mode also supports a separate protected threshold. |
+| Deliver to a real channel | The Cloudflare Worker POSTs a verified event to a unique, randomly generated ntfy topic. Reviewer opens the ntfy topic and subscribes via web/mobile. ntfy response includes a message ID; a separate production test polls ntfy's cached message history to verify it was actually accepted and stored. |
+| Every alert includes event, amount, TX link | Alert includes exact USDC amount, sender, destination, block and real Atlantic Pharos explorer transaction link, sourced from a successful confirmed ERC-20 Transfer receipt or live indexed logs. |
+| No repeat spam for one event | The SQLite-backed Durable Object writes a unique `txHash:logIndex` event ID **before** publishing. A second request returns `DUPLICATE` without re-sending. Timeout / uncertain results remain marked uncertain and aren't blindly retried. |
 
-Cloudflare Cron runs every minute (`* * * * *`). A durable cursor scans up to 96 confirmed blocks per pass, ignoring removed/invalid/zero transfers. Each run caps new alerts at five for anti-spam. The timestamp in a Telegram message is the **time detected**, not a verified block timestamp. The deduplication policy deliberately prefers at-most-once messages over blindly retrying ambiguous deliveries. A very busy chain can cause catch-up delay.
+### How to demonstrate in 60 seconds without credentials
 
-## Deployment to your existing linked Cloudflare Worker
+1. Open the [public website](https://on-chain-alert-bot.trantanlong2411.workers.dev/).
+2. At the top under **Create your own live push-alert channel**, set the minimum transfer to **0.001 USDC** and click **Create personal channel**.
+3. Click **Open and subscribe to ntfy channel**. On the ntfy website, subscribe to the topic if you want device/browser push. Topic URLs are intentionally public to anyone with the URL: do not place private information in alerts.
+4. Click **Verify real TX & send alert**. The site fetches a real successful Pharos Atlantic testnet transaction receipt (hash `0x4a603ea2d43512a76cc21f2d64b09e1ec4e07c34adc929526b514289ccfa61e1`) and verifies that a **0.003 USDC** transfer actually occurred. It posts a real notification including amount, parties and explorer link.
+5. Click **Verify real TX & send alert** again. The same event must return `DUPLICATE` and the ntfy channel should **not** receive a second copy.
+6. Change threshold to `0.002` or another valid amount and click **Save alert threshold**. Click **Scan recent confirmed blocks** to manually run the actual monitor. The channel also schedules periodic scans automatically using a Durable Object Alarm (approximately every 2 minutes).
+7. Review the public channel's recorded alerts / delivery status and [production delivery CI](https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions). Public share links have read access; the editor/sender actions need a per-channel private edit token saved only in the creating browser tab.
 
-Confirm **Cloudflare → Workers & Pages → on-chain-alert-bot → Settings → Builds** has the repository `trantanlong2411-droid/On-Chain-Alert-Bot`, branch `main`, root `/`, and deploy command **`npx wrangler deploy`** (do not use `npm run build` as the deploy command). The committed `wrangler.jsonc` defines Worker name, Cron Trigger, and SQLite Durable Object binding `WATCH_STATE` for class `WatchState`.
+**Actual device notification** requires the reviewer to subscribe to the ntfy topic; a successful service response or cached message proves ntfy acceptance, not reception by a particular device.
 
-**Configure these three values under Settings → Variables and Secrets:**
+## How it works
 
-1. **`TELEGRAM_BOT_TOKEN`** — **Encrypted Secret**, from Telegram [@BotFather](https://t.me/BotFather). Do not paste it in GitHub or ChatGPT.
-2. **`TELEGRAM_CHAT_ID`** — Telegram private chat/group ID (you must start the bot in your private chat first). Secret or public variable.
-3. **`ADMIN_API_KEY`** — your own randomly generated **Encrypted Secret** of at least 16 characters. This protects writing configuration and manually triggering an alert.
+- The original **Telegram/owner** mode remains intact. Its existing Cloudflare Cron Trigger checks Atlantic USDC `Transfer` events every minute. It requires `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `ADMIN_API_KEY` only if you want the Telegram mode. If the secrets aren't configured, it does not send Telegram messages.
+- The new **personal ntfy** mode requires **zero secrets** and uses its own SQLite-backed Durable Object per topic. A high-entropy edit token is generated securely inside the Worker, returned once and SHA-256 hashed before being persisted. The raw token is never included in the share URL.
+- The personal DO wakes via an **Alarm approximately every 120 seconds**, querying RPC for the correct Atlantic chain ID, a confirmed block head, and a bounded window of up to 96 blocks of authentic USDC logs. It stores a cursor and event identifiers for duplicate prevention and retains recent alerts. The first scan backfills only 96 confirmed blocks; earlier history isn't claimed.
+- The first five qualifying events per poll are considered for delivery, preventing a large burst of pushes; additional qualified events in that window are reported as suppressed and aren't delivered. A personal channel also has a cap of 35 distinct stored alert attempts in a rolling 24h window. These anti-spam caps mean not every qualifying transaction is guaranteed to reach a push subscriber.
+- A stored alert's `SENT` state means **ntfy or Telegram acknowledged** the event, not that a human saw it. An ambiguous network timeout is marked `DELIVERY_UNCERTAIN`; for no-repeat safety it won't automatically resend, potentially sacrificing some successful deliveries.
+- Live testnet RPC: `https://atlantic.dplabs-internal.com`; official Circle USDC: `0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B`; TX explorer: `https://atlantic.pharosscan.xyz/tx/`.
+- No transaction signing, transfers, private keys or wallet connection. The alert is derived from observed transaction data.
 
-Public default settings: `ATLANTIC_RPC_URL=https://atlantic.dplabs-internal.com`, `USDC_CONTRACT=0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B`, `ALERT_MIN_USDC=0.01`, `FINALITY_BLOCKS=3`. Threshold changes made through the dashboard persist in the Durable Object.
+## API
 
-**No wallet keys, test USDC, wallet connect, gas funding, or smart-contract deployment is required.** Monitoring is read-only.
+| Method | Route | Function |
+| --- | --- | --- |
+| GET | `/` | Public dashboard, ntfy wizard and optional Telegram legacy owner controls |
+| GET | `/api/health` | Real Worker version, network and ntfy/Telegram capabilities |
+| GET | `/api/status` | Public legacy watcher status |
+| POST | `/api/ntfy/create` | `{"thresholdUSDC":"0.001"}` → unique private channel, edit token and subscription URL |
+| GET | `/api/ntfy/:id` | Public personal channel history, threshold, delivery metadata |
+| POST | `/api/ntfy/:id/threshold` | Authenticated threshold update |
+| POST | `/api/ntfy/:id/test` | Authenticated ntfy connection test (rate-limited to once / 5 min) |
+| POST | `/api/ntfy/:id/inspect` | Authenticated real TX receipt verification, send alert once |
+| POST | `/api/ntfy/:id/scan` | Authenticated manual recent block scan |
+| POST | `/api/admin/threshold`, `/api/admin/scan`, `/api/admin/inspect-tx`, `/api/admin/telegram-test` | Optional Telegram admin-only operations |
 
-## Password-free public reviewer access (no ADMIN_API_KEY required)
+For private ntfy endpoints, send `Authorization: Bearer <editToken>` from the `create` result. Never put this secret in GitHub. Browser controls use sessionStorage. If lost, create a new personal channel.
 
-The website, `GET /api/health`, and `GET /api/status` are already public. Reviewers can inspect the live network, current configured threshold, alert history, Telegram delivery statuses, explorer links, and the complete GitHub source without logging in. The page now labels its private controls clearly as optional **owner-only** operations.
+## Testing & evidence
 
-`ADMIN_API_KEY` is **not required** for this public reviewer experience. However, the private admin actions that change the threshold, manually scan, or send a Telegram message remain protected. Removing authentication from those endpoints would let strangers send messages to the project's Telegram chat and change its monitoring policy.
+```bash
+npm install
+npm test
+npm run build             # dry run only
+node scripts/verify-atlantic.mjs
+node scripts/smoke-deployed.mjs
+node scripts/verify-ntfy-deployed.mjs   # creates an isolated real channel + performs two verified identical event checks
+```
 
-**To prove a real alert without setting up an admin key:** keep the Cloudflare Cron active, verify that `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are correct, and make a genuine Circle USDC transfer on Pharos Atlantic that meets the public dashboard threshold. The current production threshold is **0.01 USDC**, so a new transfer of at least 0.01 test USDC qualifies. Cron should detect it after block confirmation and log `SENT` if Telegram accepts the message. Reviewers can then see the event and explorer link publicly. For deduplication proof, the unique SQL key and tests demonstrate that the same event cannot be sent again; private manual re-inspection remains owner-only.
+- [Workflow: unit, real Atlantic receipt, Worker build](https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions)
+- [Production ntfy proof](proof/ntfy-production-proof.json) (generated after successful end-to-end test)
+- [Deployment guide](DEPLOYMENT.md) for optional Telegram credentials
+- [Pharos documentation and official Chain MCP](https://github.com/PharosNetwork/pharos-mcp) (this legacy Atlantic watcher uses verified chain JSON-RPC events, which are on-chain data; it does not pretend to call Chain MCP)
+- [ntfy publish API](https://docs.ntfy.sh/publish/), [ntfy polling API](https://docs.ntfy.sh/subscribe/api/)
+- [Cloudflare Durable Object Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)
 
-**Important:** A chat ID is not necessarily the number preceding the colon in a Telegram bot token (that number identifies the bot). Use `message.chat.id` from Telegram `getUpdates` for the destination chat, after sending `/start` to the bot. A configured-secret flag does not prove messages can reach that chat. Revoke and replace any bot token previously visible in a screenshot or URL shared publicly.
-
-## Reviewer demonstration: a real Telegram alert + no repeats
-
-1. Open https://on-chain-alert-bot.trantanlong2411.workers.dev/ and confirm public `/api/health` and `/api/status` are working.
-2. Enter **`ADMIN_API_KEY`** in the dashboard. This is *not* the Telegram bot token, and is not stored by the page.
-3. Set threshold to **0.001 USDC**, click **Save threshold**.
-4. Click **Send Telegram connection test**; confirm you actually receive a Telegram test notification. It is explicitly labeled **not** an on-chain alert.
-5. Click **Inspect real TX & send alert** using the confirmed actual Atlantic transfer [0x4a603ea2…61e1](https://atlantic.pharosscan.xyz/tx/0x4a603ea2d43512a76cc21f2d64b09e1ec4e07c34adc929526b514289ccfa61e1) of **0.003 USDC**. The Worker inspects its real successful receipt, validates USDC Transfer logs, amount and confirmations, and sends the genuine Telegram alert including what occurred, value and explorer link.
-6. Click **Inspect real TX & send alert** a second time with the **same hash**: result must be **`DUPLICATE`**, with **no second Telegram alert**. Dashboard log must show exactly one row for the event, with delivery `SENT` if Telegram succeeded.
-7. Optionally click **Scan latest blocks** to verify the automatic monitoring; Cron also scans periodically. Capture screenshots of the Telegram message, unique event entry, and duplicate result **without exposing secrets or admin password**.
-
-This historic confirmed transaction provides reproducible proof even when there are no new large transfers during a review. The official reviewer determines final points. **A green GitHub test or Cloudflare deployment alone does not prove Telegram delivery**; do not claim that until the user sees a received real alert.
-
-## Endpoints
-
-- `GET /` — public dashboard
-- `GET /api/health` — public readiness, chain, and secret-presence flags only
-- `GET /api/status` — public scan cursor, configured threshold, recent real event records
-- `POST /api/admin/threshold` — Bearer ADMIN_API_KEY, save threshold
-- `POST /api/admin/telegram-test` — Bearer ADMIN_API_KEY, connection test only
-- `POST /api/admin/inspect-tx` — Bearer ADMIN_API_KEY, verify real tx and send idempotent alert
-- `POST /api/admin/scan` — Bearer ADMIN_API_KEY, trigger scanning now
-
-## Code and evidence
-
-- `src/config.mjs` — validated threshold, trusted testnet and token.
-- `src/monitor.mjs` — RPC verification, event parsing, token amount, Telegram alert format, scan windows.
-- `src/worker.mjs` — Cron and SQLite durable deduplication, delivery state, public dashboard routes and protected admin actions.
-- `src/page.mjs` — live status / threshold / historical real tx demonstration.
-- `scripts/verify-atlantic.mjs` — read-only actual chain event proof, without claiming Telegram delivery.
-- `tests/monitor.test.mjs` — 6 protocol, amount, message and network checks.
-- [GitHub Actions CI](https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions) — unit tests, Wrangler build, actual Pharos USDC transfer audit.
-
-Reference: [Cloudflare Cron docs](https://developers.cloudflare.com/workers/configuration/cron-triggers/) · [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage) · [Pharos Network docs](https://docs.pharos.xyz/getting-started/network).
+No video has been recorded. Actual score is determined by the external reviewer.
