@@ -1,7 +1,5 @@
-name: On-Chain Alert Bot — real ntfy notification and dedup proof
+name: On-Chain Alert Bot — real ntfy notification and dedup proof (manual)
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
