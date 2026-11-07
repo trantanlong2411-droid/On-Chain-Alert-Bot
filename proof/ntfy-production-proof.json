@@ -1,0 +1,49 @@
+{
+  "schema": "pharos-alert-ntfy-production-v2",
+  "verifiedAtUtc": "2026-11-07T10:03:03.298Z",
+  "site": "https://on-chain-alert-bot.trantanlong2411.workers.dev",
+  "repo": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot",
+  "workflow": {
+    "realNotification": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42362253184",
+    "unitBuildRealAtlantic": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42362253263",
+    "productionReadiness": "https://github.com/trantanlong2411-droid/On-Chain-Alert-Bot/actions/runs/42362168240"
+  },
+  "chainId": 688689,
+  "network": "Pharos Atlantic Testnet",
+  "thresholdUSDC": "0.001",
+  "publicChannelDemo": "https://on-chain-alert-bot.trantanlong2411.workers.dev/?channel=5aefc038c4b64356babf6339a470a50b",
+  "ntfySubscribeUrl": "https://ntfy.sh/pharos-alert-d66e00c7eddf46b0b4889944acf4010f",
+  "transaction": {
+    "hash": "0x4a603ea2d43512a76cc21f2d64b09e1ec4e07c34adc929526b514289ccfa61e1",
+    "amount": "0.003 USDC",
+    "explorer": "https://atlantic.pharosscan.xyz/tx/0x4a603ea2d43512a76cc21f2d64b09e1ec4e07c34adc929526b514289ccfa61e1",
+    "verifiedFrom": "Successful real transaction receipt / Circle USDC Transfer event"
+  },
+  "notification": {
+    "provider": "ntfy.sh",
+    "accepted": true,
+    "id": "KF4apVVJLBww",
+    "retrievedFromProviderPublicMessageCache": true,
+    "replayMatchCount": 1,
+    "deliveredToParticularDeviceProven": false,
+    "uniqueAlertRows": 1,
+    "recordedSuccessfulAlertRows": 1,
+    "secondSubmissionStatus": "DUPLICATE",
+    "duplicateNotificationSent": false
+  },
+  "safetyAndLimits": {
+    "readOnlyOnChain": true,
+    "noPrivateKey": true,
+    "noWalletConnection": true,
+    "alertThresholdConfigurable": true,
+    "notificationPublisherRequiresUserSubscriptionForDeviceDelivery": true,
+    "channelTopicsPublicToAnyoneWithURL": true,
+    "legacyTelegramStillRequiresOptionalSecrets": true,
+    "scheduledMonitoring": "Approx every 2 minutes via Durable Object Alarms for private channels; automatic alarms not separately timed in this proof",
+    "pollingBoundaries": "First scan covers most recent 96 confirmed blocks, later polls continue cursor (max 96 per pass)",
+    "dedupePolicy": "Reserve before publish; ambiguous delivery failure marked uncertain and not automatically retried",
+    "upToFiveEventsDeliveredPerScan": true,
+    "maximumUniqueAlertAttemptsPer24h": 35
+  },
+  "notes": "Real accepted ntfy message was independently re-read from provider cache. Device-level reception remains dependent on subscription. A historical confirmed transaction was deliberately used for repeatable proof; no fake chain events were created."
+}
