@@ -26,7 +26,7 @@ const created=await call('/api/ntfy/create',{method:'POST',data:{thresholdUSDC:'
 assert.equal(created.status,201,JSON.stringify(created.data).slice(0,500));
 const {id,editToken,subscribeUrl}=created.data;
 assert.match(id,/^[0-9a-f]{32}$/);
-assert.match(subscribeUrl,/^https:\/\/ntfy\.sh\/pharos-alert-[0-9a-f]{32}$/);
+assert.match(subscribeUrl,/^https:\/\/ntfy\.(?:jae\.fi|adminforge\.de|sh)\/pharos-alert-[0-9a-f]{32}$/);
 assert.ok(!created.data.publicDashboard.includes(editToken));
 const publicList=await call('/api/ntfy/'+id);
 assert.equal(publicList.status,200);
@@ -49,8 +49,8 @@ assert.equal(after.data.alertsTotal,1);
 assert.equal(after.data.deliveredTotal,1);
 assert.equal(after.data.recent[0].hash,hash);
 assert.equal(after.data.recent[0].delivery,'SENT');
-const topic=subscribeUrl.slice('https://ntfy.sh/'.length);
-const r=await fetch('https://ntfy.sh/'+topic+'/json?poll=1&since=10m',{
+const topic=new URL(subscribeUrl).pathname.slice(1);
+const r=await fetch(subscribeUrl+'/json?poll=1&since=10m',{
  signal:AbortSignal.timeout(18000)});
 assert.equal(r.status,200,'ntfy message replay endpoint failed');
 const lines=(await r.text()).split('\n').filter(Boolean);

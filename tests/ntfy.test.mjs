@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {channelName,validateTopic,hashAccess,publishNtfy} from '../src/ntfy.mjs';
+import {channelName,validateTopic,hashAccess,publishNtfy,NTFY_SERVERS} from '../src/ntfy.mjs';
 const topic='pharos-alert-'+'a'.repeat(32);
 const event={
  hash:'0x'+'b'.repeat(64),amountUSDC:'0.003',
@@ -24,7 +24,7 @@ test('channel access token is hashed and not used as topic URL',async()=>{
 test('sends a real-channel formatted event including amount/from/to and link',async()=>{
  let calls=0;
  const r=await publishNtfy({topic,event},async(url,req)=>{
-  calls++;assert.equal(url,'https://ntfy.sh/');
+  calls++;assert.equal(url,NTFY_SERVERS[0]);
   assert.equal(req.method,'POST');const body=JSON.parse(req.body);
   assert.equal(body.topic,topic);
   assert.match(body.message,/0\.003 USDC/);
@@ -42,6 +42,7 @@ test('service rejected or topic-mismatched alert is not confirmed as sent',async
   ok:false,status:429,json:async()=>({code:42901})})),/refused/);
  await assert.rejects(publishNtfy({topic,event},async()=>({
   ok:true,status:200,json:async()=>({event:'message',id:'x',topic:'other'})})),/unexpected topic/);
+ await assert.rejects(publishNtfy({topic,event,server:'https://attacker.example/'},async()=>{}),/Untrusted/);
  await assert.rejects(publishNtfy({topic,event:{...event,explorer:'https://evil.example/tx/0x'+'b'.repeat(64)}},async()=>{}),/explorer/);
 });
 test('test message is explicitly not represented as an on-chain alert',async()=>{

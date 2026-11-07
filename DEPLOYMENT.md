@@ -30,3 +30,6 @@ If you still want the Telegram mode in addition to ntfy, privately configure thr
 The original admin controls allow a Telegram connection test, threshold change and confirmed historical transaction inspection. Public ntfy users never need these secrets.
 
 Safety: ntfy topics are public and anyone with the topic URL can publish messages to it; avoid secrets and high-stakes alerts. The notification service can be unavailable or rate-limited; Cloudflare alarms can run late. A provider-acknowledged notification does not guarantee a mobile device displayed it. Scheduled polling and event history are bounded to prevent spam.
+
+
+**ntfy delivery provider:** Because ntfy.sh free-tier sends from some shared Cloudflare outgoing IPs can return 429, the personal-channel initialization runs a real welcome publish to the first accepting fixed ntfy community-listed server (jae.fi, adminforge.de, then ntfy.sh). Users subscribe to the specific host shown on their personal channel, not always ntfy.sh. If all hosts reject it, no channel is created; retry later or enable the legacy Telegram integration.

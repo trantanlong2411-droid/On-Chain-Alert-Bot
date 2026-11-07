@@ -2,7 +2,7 @@ import {DurableObject} from 'cloudflare:workers';
 import {setup,publicSetup,threshold,NETWORK,TRANSFER_TOPIC} from './config.mjs';
 import {rpc,blockStatus,qualifying,scanWindow,sendTelegram,smallJson} from './monitor.mjs';
 import {PAGE} from './page.mjs';
-import {publishNtfy,channelName,hashAccess} from './ntfy.mjs';
+import {publishNtfy,channelName,hashAccess,NTFY_SERVERS} from './ntfy.mjs';
 const iso=()=>new Date().toISOString();
 const err=x=>String(x?.message||x||'Unknown error').slice(0,190);
 const reply=smallJson;
@@ -37,7 +37,7 @@ export class WatchState extends DurableObject{
    alertsTotal:count,deliveredTotal:delivered,cursor:this.get('cursor'),
    deliveryChannel:this.get('personal')==='true'?'ntfy':'telegram',
    ntfyTopic:this.get('personal')==='true'?this.get('topic'):null,
-   ntfySubscriptionUrl:this.get('personal')==='true'?'https://ntfy.sh/'+this.get('topic'):null,
+   ntfySubscriptionUrl:this.get('personal')==='true'?(this.get('ntfyServer')||'https://ntfy.sh/')+this.get('topic'):null,
    storedMode:this.get('personal')==='true'?'private-personal-alert':'legacy-telegram',
    noRepeatPolicy:'Each event keyed by transaction hash and log index and reserved before publish',
    lastScan:this.get('lastScan'),lastError:this.get('lastError'),
@@ -57,7 +57,7 @@ export class WatchState extends DurableObject{
   this.sql.exec('INSERT OR IGNORE INTO alerts (id,tx_hash,log_index,block_number,from_address,to_address,amount_atomic,amount_usdc,explorer,source,first_seen,delivery) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',e.id,e.hash,e.index,e.block,e.from,e.to,e.amountAtomic,e.amountUSDC,e.explorer,source,at,'SENDING');
   try{
    const personal=this.get('personal')==='true';
-   const delivered=personal?await publishNtfy({topic:this.get('topic'),event:e}):
+   const delivered=personal?await publishNtfy({topic:this.get('topic'),event:e,server:this.get('ntfyServer')}):
      await sendTelegram(e,this.env);
    this.sql.exec("UPDATE alerts SET delivery='SENT',delivered_at=?,telegram_message_id=?,error=NULL WHERE id=?",iso(),delivered.messageId,e.id);
    return {status:'SENT',id:e.id,hash:e.hash,amountUSDC:e.amountUSDC,explorer:e.explorer,
@@ -139,13 +139,31 @@ export class WatchState extends DurableObject{
    const value=threshold(data.thresholdUSDC||'0.001');
    const tokenHash=await hashAccess(data.token);
    const topic=channelName();
+   // Free ntfy.sh can rate-limit Cloudflare shared outgoing IPs. Try a fixed
+   // list of ntfy community hosts and bind this topic to the first host that
+   // actually ACKNOWLEDGES a welcome notification. Never silently redirect later.
+   let accepted=null;const unavailable=[];
+   for(const server of NTFY_SERVERS){
+    try{
+     accepted=await publishNtfy({topic,server,title:'Pharos alert channel connected',
+      message:'Channel initialized at '+iso()+' UTC. This is a connection test, not a blockchain alert.'});
+     break;
+    }catch(e){unavailable.push(server+': '+err(e));}
+   }
+   if(!accepted)return reply({ok:false,error:'No ntfy provider currently accepted a connection test.',
+    failures:unavailable},503);
    this.put('threshold',value.display);
    this.put('tokenHash',tokenHash);
    this.put('personal','true');
    this.put('topic',topic);
+   this.put('ntfyServer',accepted.server);
    this.put('createdAt',iso());
+   this.put('lastNtfyTest',iso());
+   this.put('lastNtfyMessageId',accepted.messageId);
    await this.ctx.storage.setAlarm(Date.now()+3000);
-   return reply({ok:true,channel:'ntfy',thresholdUSDC:value.display,topic,subscribeUrl:'https://ntfy.sh/'+topic});
+   return reply({ok:true,channel:'ntfy',thresholdUSDC:value.display,topic,
+    subscribeUrl:accepted.subscribeUrl,notificationServer:accepted.server,
+    welcomeNotificationId:accepted.messageId});
   }catch(ex){return reply({ok:false,error:err(ex)},400);}
  }
  async ownerOK(request){
@@ -162,7 +180,7 @@ export class WatchState extends DurableObject{
   if(Number.isFinite(last)&&Date.now()-last<300000)
    return reply({ok:false,error:'Connection test allowed once every five minutes to prevent message spam'},429);
   try{
-   const result=await publishNtfy({topic:this.get('topic'),
+   const result=await publishNtfy({topic:this.get('topic'),server:this.get('ntfyServer'),
     title:'Pharos Alert Bot · Channel connection test',
     message:'Connection test sent at '+iso()+' UTC. This is NOT a real blockchain transaction alert.'});
    this.put('lastNtfyTest',iso());

@@ -74,3 +74,8 @@ node scripts/verify-ntfy-deployed.mjs   # creates an isolated real channel + per
 - [Cloudflare Durable Object Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)
 
 No video has been recorded. Actual score is determined by the external reviewer.
+
+
+### Provider availability
+
+The free official ntfy.sh service may return HTTP 429 when Cloudflare shares an outgoing IP with other publishers. New channels now send a real **welcome/test message at creation** and bind the topic to the first accepting host among the community-listed [ntfy.jae.fi](https://ntfy.jae.fi/), [ntfy.adminforge.de](https://ntfy.adminforge.de/) and [ntfy.sh](https://ntfy.sh/). The subscribe URL always points to the exact host selected during creation; events are never rerouted silently to a host the user did not subscribe to. These community instances are independent operators and may be unavailable or have their own policies, so they must not be used for confidential alerts. If all hosts reject publication, creation fails honestly.
